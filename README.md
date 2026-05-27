@@ -29,8 +29,7 @@ OS and Software tested:
 
 1. Create directory and clone this repo
 ```bash
-mkdir ~/sim2real
-cd ~/sim2real
+cd ~/
 git clone https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop.git
 ```
 
@@ -38,7 +37,7 @@ git clone https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop.git
 
 2. Navigate to the repo
 ```bash
-cd ~/sim2real/Sim-to-Real-SO-101-Workshop
+cd ~/Sim-to-Real-SO-101-Workshop
 ```
 
 #### Teleop & Simulation container
@@ -105,7 +104,7 @@ docker run -it --rm --name real-robot --network host --privileged --gpus all \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v ~/.cache/huggingface/lerobot/calibration:/root/.cache/huggingface/lerobot/calibration \
     -v ./docker/env:/root/env \
-    -v ~/sim2real/models:/workspace/models \
+    -v ~/models:/workspace/models \
     -v $(pwd)/docker/real/scripts:/workspace/Isaac-GR00T/gr00t/eval/real_robot/SO100 \
     real-robot \
     /bin/bash
