@@ -20,8 +20,12 @@ import json
 import socket
 import time
 
-# Same module the workshop's interface imports its leader config from.
-from lerobot.teleoperators.so101_leader import SO101Leader, SO101LeaderConfig
+# lerobot moved the SO-arm leader around between versions: newer installs expose it as
+# `so_leader`, the workshop's container uses `so101_leader`. Support both.
+try:
+    from lerobot.teleoperators.so101_leader import SO101Leader, SO101LeaderConfig
+except ImportError:
+    from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
 
 JOINTS = [
     "shoulder_pan.pos",
