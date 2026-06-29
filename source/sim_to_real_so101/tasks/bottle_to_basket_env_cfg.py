@@ -81,7 +81,7 @@ assets_path = os.path.dirname(os.path.abspath(assets.__file__))
 EXTERNAL_CAM_EYE = (-0.08, 0.31, 0.40)     # back-left, toward the corner, ~16 in up
 EXTERNAL_CAM_LOOK = (0.18, 0.06, 0.06)     # workspace centre on the board (bottle<->basket)
 EXTERNAL_CAM_YAW_RIGHT_DEG = 15.0          # pan the view to the RIGHT (matches the real rig's "15 deg right")
-EXTERNAL_CAM_PITCH_UP_DEG = 15.0           # tilt the view UP
+EXTERNAL_CAM_PITCH_UP_DEG = 5.0            # tilt the view UP (was 15; tilted down 10)
 
 
 def _look_at_quat_opengl(eye, target, up=(0.0, 0.0, 1.0)):
@@ -172,8 +172,11 @@ BOTTLE_SPAWN_Z = 0.05    # bottom rests on the board; tune to the bottle's half-
 
 @configclass
 class BottleToBasketSceneCfg(SO101TaskSceneCfg):
-    # robot with contact sensors enabled (for grasp detection)
-    robot: ArticulationCfg = S0101_CONTACT_GRASP_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    # robot with contact sensors enabled (for grasp detection); moved 3 in right (-y)
+    robot: ArticulationCfg = S0101_CONTACT_GRASP_CFG.replace(
+        prim_path="{ENV_REGEX_NS}/Robot",
+        init_state=S0101_CONTACT_GRASP_CFG.init_state.replace(pos=(-0.05, -0.076, 0.0)),
+    )
 
     # Trenton's real setup has no black mat — remove it (the lightbox base is the floor).
     mat = None
@@ -188,7 +191,7 @@ class BottleToBasketSceneCfg(SO101TaskSceneCfg):
     basket = basket.replace()
     basket.prim_path = "{ENV_REGEX_NS}/Basket"
     # Placed to match your real basket spot. (+x = forward, -y = right.)
-    basket.init_state.pos = (0.28, 0.07, 0.05)    # spawns just above the surface, settles
+    basket.init_state.pos = (0.36, 0.07, 0.05)    # spawns just above the surface, settles
 
     contact_grasp = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/jaw",
