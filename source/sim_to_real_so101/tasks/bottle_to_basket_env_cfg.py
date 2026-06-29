@@ -72,12 +72,14 @@ bottle.spawn.usd_path = f"{assets_path}/usd/Vial_opaque.usda"
 bottle.spawn.mass_props = sim_utils.MassPropertiesCfg(mass=0.04)            # ~40 g; set to real
 bottle.spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(angular_damping=100.0)
 
-# ---- the target: an open basket (10 x 4 x 3 in, 1/8 in walls) ----
+# ---- the target: an open basket (10 x 4 x 3 in, 1/8 in walls). basket.usda is a
+# floor + 4 walls (open top) at your real dimensions, in basket-local coords. ----
 basket = manipulation_object_base.replace()
 basket.prim_path = "{ENV_REGEX_NS}/Basket"
-# TODO: replace with your basket USD (open box). tray.usda is an open-container stand-in.
-basket.spawn.usd_path = f"{assets_path}/usd/tray.usda"
+basket.spawn.usd_path = f"{assets_path}/usd/basket.usda"
 basket.spawn.mass_props = sim_utils.MassPropertiesCfg(mass=0.15)
+basket.spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg()
+basket.spawn.collision_props = sim_utils.CollisionPropertiesCfg()
 
 BOTTLE_SPAWN_Z = 0.05    # bottom rests on the board; tune to the bottle's half-height
 
@@ -86,6 +88,9 @@ BOTTLE_SPAWN_Z = 0.05    # bottom rests on the board; tune to the bottle's half-
 class BottleToBasketSceneCfg(SO101TaskSceneCfg):
     # robot with contact sensors enabled (for grasp detection)
     robot: ArticulationCfg = S0101_CONTACT_GRASP_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+    # Trenton's real setup has no black mat — remove it (the lightbox base is the floor).
+    mat = None
 
     # single bottle (vs the workshop's three vials)
     bottle = bottle.replace()
@@ -137,6 +142,9 @@ class BottleToBasketEventCfg(TaskEventCfg):
         mode="reset",
         params={"color_names": ["white"]},
     )
+
+    # The mat was removed from the scene, so drop the event that randomized it.
+    reset_mat_rotation = None
 
     reset_bottle = EventTerm(
         func=base_mdp.reset_root_state_uniform,
