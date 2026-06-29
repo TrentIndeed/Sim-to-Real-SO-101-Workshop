@@ -28,7 +28,7 @@ from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab.assets import RigidObjectCfg, ArticulationCfg, AssetBaseCfg
-from isaaclab.sensors import ContactSensorCfg
+from isaaclab.sensors import ContactSensorCfg, TiledCameraCfg
 from isaacsim.core.utils.rotations import euler_angles_to_quat
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -56,9 +56,74 @@ from .task_env_cfg import (
     SO101TaskEnvCfg,
     TaskEventCfg,
     TaskObservationsCfg,
+    camera_object,            # the shared TiledCameraCfg template (pinhole, opengl convention)
 )
 
 assets_path = os.path.dirname(os.path.abspath(assets.__file__))
+
+
+# ----------------------------------------------------------------------------
+# Desk camera placement (look-at).
+#
+# The workshop bolts the external D455 *inside* a small white photo-tent and only
+# jitters it a couple cm. Trenton's real rig is an open foam board with the camera
+# in the back-LEFT corner, ~16 in up, looking diagonally across. The exact real
+# distance is outside the tent, so we match the ANGLE (left + high, looking across)
+# from the tent's left corner instead.
+#
+# We define our OWN free-standing external camera with an explicit look-at: set
+# EYE (where it sits) + TARGET (what it stares at), and the orientation is computed
+# exactly. To re-tune, change only EXTERNAL_CAM_EYE — the aim stays locked on the
+# workspace, so we never get a blind "all white" from a bad rotation again.
+# Coordinates are in the env frame (robot base sits at about (-0.05, 0, 0); the
+# bottle spawns near (0.25, 0, 0.05), the basket near (0.18, 0.12, 0.05)).
+# +x = forward (where the arm reaches), +z = up.
+EXTERNAL_CAM_EYE = (-0.05, 0.20, 0.42)     # back-left-ish, ~16 in up
+EXTERNAL_CAM_TARGET = (0.20, 0.06, 0.04)   # workspace centre (between bottle + basket, on the board)
+
+
+def _look_at_quat_opengl(eye, target, up=(0.0, 0.0, 1.0)):
+    """Quaternion (w, x, y, z) that aims an OpenGL-convention camera (looks down
+    local -Z, +Y up) from `eye` at `target`. Pure numpy, evaluated at import time."""
+    eye = np.asarray(eye, dtype=float)
+    target = np.asarray(target, dtype=float)
+    up = np.asarray(up, dtype=float)
+
+    z = eye - target                       # opengl +Z points back toward the eye
+    z /= np.linalg.norm(z)
+    x = np.cross(up, z)
+    if np.linalg.norm(x) < 1e-6:           # eye directly above/below target -> pick another up
+        x = np.cross(np.array([0.0, 1.0, 0.0]), z)
+    x /= np.linalg.norm(x)
+    y = np.cross(z, x)
+    R = np.column_stack([x, y, z])         # local -> world rotation
+
+    t = np.trace(R)
+    if t > 0.0:
+        s = np.sqrt(t + 1.0) * 2.0
+        w = 0.25 * s
+        qx = (R[2, 1] - R[1, 2]) / s
+        qy = (R[0, 2] - R[2, 0]) / s
+        qz = (R[1, 0] - R[0, 1]) / s
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
+        w = (R[2, 1] - R[1, 2]) / s
+        qx = 0.25 * s
+        qy = (R[0, 1] + R[1, 0]) / s
+        qz = (R[0, 2] + R[2, 0]) / s
+    elif R[1, 1] > R[2, 2]:
+        s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
+        w = (R[0, 2] - R[2, 0]) / s
+        qx = (R[0, 1] + R[1, 0]) / s
+        qy = 0.25 * s
+        qz = (R[1, 2] + R[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
+        w = (R[1, 0] - R[0, 1]) / s
+        qx = (R[0, 2] + R[2, 0]) / s
+        qy = (R[1, 2] + R[2, 1]) / s
+        qz = 0.25 * s
+    return (float(w), float(qx), float(qy), float(qz))
 
 # ---- the pick object: a pill bottle (2 in dia x 3 in tall) ----
 manipulation_object_base = RigidObjectCfg(
@@ -114,6 +179,19 @@ class BottleToBasketSceneCfg(SO101TaskSceneCfg):
         filter_prim_paths_expr=["{ENV_REGEX_NS}/Bottle"],
     )
 
+    # Replace the workshop's tent-mounted external camera with our own free-standing
+    # one, placed by look-at (see EXTERNAL_CAM_EYE/TARGET above). Keeping the scene key
+    # "camera_external_D455" means the observation terms (rgb/depth_external_D455) are
+    # unchanged — they just read this camera instead. The old tent camera prim is left
+    # in place but unused.
+    camera_external_D455 = camera_object.replace()
+    camera_external_D455.prim_path = "{ENV_REGEX_NS}/external_cam_D455"
+    camera_external_D455.offset = TiledCameraCfg.OffsetCfg(
+        pos=EXTERNAL_CAM_EYE,
+        rot=_look_at_quat_opengl(EXTERNAL_CAM_EYE, EXTERNAL_CAM_TARGET),
+        convention="opengl",
+    )
+
 
 @configclass
 class BottleToBasketDRSceneCfg(BottleToBasketSceneCfg):
@@ -148,18 +226,11 @@ class BottleToBasketEventCfg(TaskEventCfg):
     # The mat was removed from the scene, so drop the event that randomized it.
     reset_mat_rotation = None
 
-    # Move the desk camera toward Trenton's back-LEFT corner (+y) and HIGHER (+z), as a
-    # fixed offset from its lightbox default. TUNE these from what you see (and add
-    # rot_range pitch/yaw if it needs re-aiming at the workspace).
-    reset_camera_external_pose = EventTerm(
-        func=randomize_camera_pose,
-        mode="reset",
-        params={
-            "prim_path_pattern": "{ENV_REGEX_NS}/LightStudio/LightBox/camera_mount",
-            "pos_range": {"x": (0.0, 0.0), "y": (0.20, 0.20), "z": (0.10, 0.10)},  # +y=left, +z=up
-            "rot_range": {},
-        },
-    )
+    # The external camera is now our own free-standing look-at camera (see
+    # EXTERNAL_CAM_EYE/TARGET), not the tent mount — so the workshop's mount-jitter
+    # event no longer applies. Disable it. (For domain randomization we'll jitter the
+    # new camera's pose directly later.)
+    reset_camera_external_pose = None
 
     reset_bottle = EventTerm(
         func=base_mdp.reset_root_state_uniform,
