@@ -103,7 +103,7 @@ class BottleToBasketSceneCfg(SO101TaskSceneCfg):
     basket = basket.replace()
     basket.prim_path = "{ENV_REGEX_NS}/Basket"
     # TODO: place to match your real basket spot (back-left in your photo).
-    basket.init_state.pos = (0.18, 0.12, 0.0)
+    basket.init_state.pos = (0.18, 0.12, 0.05)    # spawns just above the surface, settles
 
     contact_grasp = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/jaw",
