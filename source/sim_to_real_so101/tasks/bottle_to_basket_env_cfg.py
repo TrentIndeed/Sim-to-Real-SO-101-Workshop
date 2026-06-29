@@ -67,10 +67,11 @@ manipulation_object_base = RigidObjectCfg(
 )
 
 bottle = manipulation_object_base.replace()
-# TODO: replace with your pill-bottle USD (2 in dia x 3 in tall). Vial is a stand-in.
-bottle.spawn.usd_path = f"{assets_path}/usd/Vial_opaque.usda"
+# bottle.usda: a 2 in dia x 3 in tall cylinder body + cap, upright, origin at bottom-centre.
+bottle.spawn.usd_path = f"{assets_path}/usd/bottle.usda"
 bottle.spawn.mass_props = sim_utils.MassPropertiesCfg(mass=0.04)            # ~40 g; set to real
 bottle.spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(angular_damping=100.0)
+bottle.spawn.collision_props = sim_utils.CollisionPropertiesCfg()
 
 # ---- the target: an open basket (10 x 4 x 3 in, 1/8 in walls). basket.usda is a
 # floor + 4 walls (open top) at your real dimensions, in basket-local coords. ----
@@ -97,7 +98,7 @@ class BottleToBasketSceneCfg(SO101TaskSceneCfg):
     bottle.prim_path = "{ENV_REGEX_NS}/Bottle"
     # TODO: place where the arm comfortably reaches; refine with the replay overlay.
     bottle.init_state.pos = (0.25, 0.0, BOTTLE_SPAWN_Z)
-    bottle.init_state.rot = euler_angles_to_quat(np.array([0, 90, 0]), degrees=True)
+    bottle.init_state.rot = euler_angles_to_quat(np.array([0, 0, 0]), degrees=True)  # upright
 
     basket = basket.replace()
     basket.prim_path = "{ENV_REGEX_NS}/Basket"
