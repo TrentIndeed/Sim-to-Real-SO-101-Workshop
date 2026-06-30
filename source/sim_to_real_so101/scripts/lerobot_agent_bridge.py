@@ -19,6 +19,7 @@
 import argparse
 import json
 import os
+import queue
 import socket
 import threading
 
@@ -129,6 +130,9 @@ class RawRecorder:
         }
         with open(os.path.join(out_root, "dataset_meta.json"), "w") as f:
             json.dump(meta, f, indent=2)
+        # write episodes to disk on a background thread so the sim/teleop never freezes
+        self._save_queue = queue.Queue()
+        threading.Thread(target=self._save_worker, daemon=True).start()
 
     def _next_index(self):
         i = 0
@@ -154,20 +158,34 @@ class RawRecorder:
         if not self.states:
             print("[RAW] nothing to save (0 frames) — record something first.", flush=True)
             return
-        d = os.path.join(self.out_root, f"episode_{self.ep:04d}")
-        os.makedirs(d, exist_ok=True)
-        T = len(self.states)
-        np.save(os.path.join(d, "observation_state.npy"), np.asarray(self.states, dtype=np.float32))
-        np.save(os.path.join(d, "action.npy"), np.asarray(self.actions, dtype=np.float32))
-        np.save(os.path.join(d, "timestamps.npy"), (np.arange(T, dtype=np.float32) / float(self.fps)))
-        for c in self.cam_names:
-            cdir = os.path.join(d, f"images_{c}")
-            os.makedirs(cdir, exist_ok=True)
-            for i, img in enumerate(self.frames[c]):
-                Image.fromarray(img).save(os.path.join(cdir, f"frame_{i:05d}.png"))
-        print(f"[RAW] saved episode {self.ep:04d}: {T} frames, cams={self.cam_names} -> {d}", flush=True)
+        # hand the buffers to the background writer and reset immediately (no freeze)
+        ep = self.ep
+        self._save_queue.put((ep, self.states, self.actions, self.frames))
+        print(f"[RAW] episode {ep:04d} ({len(self.states)} frames) queued — writing in background "
+              f"(wait for 'saved' before shutting down).", flush=True)
         self.ep += 1
         self._reset()
+
+    def _save_worker(self):
+        while True:
+            ep, states, actions, frames = self._save_queue.get()
+            try:
+                d = os.path.join(self.out_root, f"episode_{ep:04d}")
+                os.makedirs(d, exist_ok=True)
+                T = len(states)
+                np.save(os.path.join(d, "observation_state.npy"), np.asarray(states, dtype=np.float32))
+                np.save(os.path.join(d, "action.npy"), np.asarray(actions, dtype=np.float32))
+                np.save(os.path.join(d, "timestamps.npy"), (np.arange(T, dtype=np.float32) / float(self.fps)))
+                for c in self.cam_names:
+                    cdir = os.path.join(d, f"images_{c}")
+                    os.makedirs(cdir, exist_ok=True)
+                    for i, img in enumerate(frames[c]):
+                        Image.fromarray(img).save(os.path.join(cdir, f"frame_{i:05d}.png"), compress_level=1)
+                print(f"[RAW] saved episode {ep:04d}: {T} frames, cams={self.cam_names} -> {d}", flush=True)
+            except Exception as exc:
+                print(f"[RAW] ERROR saving episode {ep:04d}: {exc!r}", flush=True)
+            finally:
+                self._save_queue.task_done()
 
 
 class ActionServer:
