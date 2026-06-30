@@ -42,8 +42,11 @@ parser.add_argument("--raw_out", type=str, default="/workspace/raw_demos",
                     help="Folder to write raw recorded episodes to (converted to a LeRobot "
                          "dataset later by scripts/build_lerobot_dataset.py).")
 parser.add_argument("--view_camera", type=str, default="external_cam_D455",
-                    help="Camera the livestream viewport looks through at launch (no manual "
+                    help="Camera the MAIN viewport looks through at launch (no manual "
                          "re-selecting each time). Use 'perspective' to keep the free camera.")
+parser.add_argument("--view_camera2", type=str, default="Robot/gripper/gripper_cam",
+                    help="Camera the SECOND viewport looks through (the gripper/ego cam). "
+                         "Empty string to skip the second viewport.")
 parser.add_argument("--view_res", type=str, default="1280x960",
                     help="Viewport render resolution WxH (4:3 matches the cameras, no squish).")
 AppLauncher.add_app_launcher_args(parser)
@@ -243,6 +246,53 @@ class ActionServer:
             return self._latest
 
 
+def _setup_viewports(cam1, cam2, res):
+    """Point the main viewport at cam1 (desk) and a second viewport at cam2 (gripper),
+    both at the given WxH. Creates the second viewport if it isn't open. Camera names are
+    relative to /World/envs/env_0/. Best-effort: never fatal."""
+    try:
+        vw, vh = (int(x) for x in res.lower().split("x"))
+    except Exception:
+        vw, vh = 1280, 960
+
+    def _apply(api, cam):
+        api.camera_path = f"/World/envs/env_0/{cam}"
+        try:
+            api.resolution = (vw, vh)
+        except Exception:
+            pass
+
+    # main viewport -> desk camera
+    if cam1 and cam1.lower() != "perspective":
+        try:
+            from omni.kit.viewport.utility import get_active_viewport
+            vp = get_active_viewport()
+            if vp is not None:
+                _apply(vp, cam1)
+                print(f"[VIEW] main viewport -> {cam1} @ {vw}x{vh}", flush=True)
+        except Exception as exc:
+            print(f"[VIEW] main viewport not set ({exc!r})", flush=True)
+
+    # second viewport -> gripper camera (reuse an existing 2nd one, else create it)
+    if cam2:
+        try:
+            api2 = None
+            try:
+                from omni.kit.viewport.window import get_viewport_window_instances
+                wins = list(get_viewport_window_instances())
+                if len(wins) >= 2:
+                    api2 = wins[1].viewport_api
+            except Exception:
+                pass
+            if api2 is None:
+                from omni.kit.viewport.utility import create_viewport_window
+                api2 = create_viewport_window(name="Gripper Cam").viewport_api
+            _apply(api2, cam2)
+            print(f"[VIEW] second viewport -> {cam2} @ {vw}x{vh}", flush=True)
+        except Exception as exc:
+            print(f"[VIEW] second viewport not set ({exc!r})", flush=True)
+
+
 def main():
     keyboard_control = KeyboardControl()
 
@@ -267,22 +317,9 @@ def main():
     joint_mins = torch.tensor([SO101_USD_RANGES_DEG[n][0] for n in JOINT_NAMES], dtype=torch.float32, device=dev)
     joint_maxs = torch.tensor([SO101_USD_RANGES_DEG[n][1] for n in JOINT_NAMES], dtype=torch.float32, device=dev)
 
-    # Auto-configure the livestream viewport (camera + 4:3 aspect) so it's framed right on
-    # every launch — no re-selecting the camera / fixing the aspect ratio by hand.
-    if args_cli.view_camera and args_cli.view_camera.lower() != "perspective":
-        try:
-            from omni.kit.viewport.utility import get_active_viewport
-            vp = get_active_viewport()
-            if vp is not None:
-                vp.camera_path = f"/World/envs/env_0/{args_cli.view_camera}"
-                try:
-                    vw, vh = (int(x) for x in args_cli.view_res.lower().split("x"))
-                    vp.resolution = (vw, vh)
-                except Exception:
-                    pass
-                print(f"[VIEW] viewport -> {args_cli.view_camera} @ {args_cli.view_res}", flush=True)
-        except Exception as exc:
-            print(f"[VIEW] could not auto-set viewport ({exc!r}); set it in the dropdown.", flush=True)
+    # Auto-configure the livestream viewports (cameras + 4:3 aspect) so they're framed right
+    # on every launch — no re-selecting cameras / fixing aspect ratios by hand.
+    _setup_viewports(args_cli.view_camera, args_cli.view_camera2, args_cli.view_res)
 
     action_server = ActionServer(args_cli.bind_host, args_cli.bind_port)
     actions = torch.zeros(env.action_space.shape, device=dev)
