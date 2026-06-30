@@ -34,6 +34,7 @@ def main():
     ap.add_argument("--root", required=True, help="output dataset folder")
     ap.add_argument("--task", required=True, help="language task string")
     ap.add_argument("--fps", type=int, default=None, help="override fps (else from dataset_meta.json)")
+    ap.add_argument("--push", action="store_true", help="push the finished dataset to the HF Hub (needs huggingface-cli login)")
     args = ap.parse_args()
 
     meta = json.load(open(os.path.join(args.raw, "dataset_meta.json")))
@@ -78,6 +79,11 @@ def main():
         print(f"[build]   {os.path.basename(ep)}: {T} frames")
 
     print(f"[build] DONE -> {args.root}")
+
+    if args.push:
+        print(f"[build] pushing {args.repo_id} to the HF Hub ...")
+        ds.push_to_hub()
+        print(f"[build] pushed -> https://huggingface.co/datasets/{args.repo_id}")
 
 
 if __name__ == "__main__":
