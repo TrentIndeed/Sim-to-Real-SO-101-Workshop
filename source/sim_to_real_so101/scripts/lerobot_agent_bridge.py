@@ -166,18 +166,20 @@ class RawRecorder:
         if not self.states:
             print("[RAW] nothing to save (0 frames) — record something first.", flush=True)
             return
-        # hand the buffers to the background writer and reset immediately (no freeze)
-        ep = self.ep
-        self._save_queue.put((ep, self.states, self.actions, self.frames))
-        print(f"[RAW] episode {ep:04d} ({len(self.states)} frames) queued — writing in background "
-              f"(wait for 'saved' before shutting down).", flush=True)
-        self.ep += 1
+        # hand the buffers to the background writer and reset immediately (no freeze).
+        # The actual episode number is chosen at WRITE time so we never overwrite.
+        self._save_queue.put((self.states, self.actions, self.frames))
+        print(f"[RAW] episode ({len(self.states)} frames) queued — writing in background "
+              f"(wait for the 'saved' line before shutting down).", flush=True)
         self._reset()
 
     def _save_worker(self):
         while True:
-            ep, states, actions, frames = self._save_queue.get()
+            states, actions, frames = self._save_queue.get()
             try:
+                # re-scan disk and take the first FREE slot -> can never clobber an existing
+                # episode (covers async kills, restarts, and reused numbers across instances)
+                ep = self._next_index()
                 d = os.path.join(self.out_root, f"episode_{ep:04d}")
                 os.makedirs(d, exist_ok=True)
                 T = len(states)
