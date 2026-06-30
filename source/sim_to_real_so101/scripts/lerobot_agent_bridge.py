@@ -41,6 +41,11 @@ parser.add_argument("--seed", type=int, default=101)
 parser.add_argument("--raw_out", type=str, default="/workspace/raw_demos",
                     help="Folder to write raw recorded episodes to (converted to a LeRobot "
                          "dataset later by scripts/build_lerobot_dataset.py).")
+parser.add_argument("--view_camera", type=str, default="external_cam_D455",
+                    help="Camera the livestream viewport looks through at launch (no manual "
+                         "re-selecting each time). Use 'perspective' to keep the free camera.")
+parser.add_argument("--view_res", type=str, default="1280x960",
+                    help="Viewport render resolution WxH (4:3 matches the cameras, no squish).")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -261,6 +266,23 @@ def main():
 
     joint_mins = torch.tensor([SO101_USD_RANGES_DEG[n][0] for n in JOINT_NAMES], dtype=torch.float32, device=dev)
     joint_maxs = torch.tensor([SO101_USD_RANGES_DEG[n][1] for n in JOINT_NAMES], dtype=torch.float32, device=dev)
+
+    # Auto-configure the livestream viewport (camera + 4:3 aspect) so it's framed right on
+    # every launch — no re-selecting the camera / fixing the aspect ratio by hand.
+    if args_cli.view_camera and args_cli.view_camera.lower() != "perspective":
+        try:
+            from omni.kit.viewport.utility import get_active_viewport
+            vp = get_active_viewport()
+            if vp is not None:
+                vp.camera_path = f"/World/envs/env_0/{args_cli.view_camera}"
+                try:
+                    vw, vh = (int(x) for x in args_cli.view_res.lower().split("x"))
+                    vp.resolution = (vw, vh)
+                except Exception:
+                    pass
+                print(f"[VIEW] viewport -> {args_cli.view_camera} @ {args_cli.view_res}", flush=True)
+        except Exception as exc:
+            print(f"[VIEW] could not auto-set viewport ({exc!r}); set it in the dropdown.", flush=True)
 
     action_server = ActionServer(args_cli.bind_host, args_cli.bind_port)
     actions = torch.zeros(env.action_space.shape, device=dev)
