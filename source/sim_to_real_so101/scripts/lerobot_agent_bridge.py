@@ -183,6 +183,7 @@ def main():
 
     last_dict = None
     warned_wait = False
+    step_i = 0
     while simulation_app.is_running():
         with torch.inference_mode():
             act_dict = action_server.latest()
@@ -196,6 +197,15 @@ def main():
             if last_dict is not None:
                 raw, mapped = map_real_to_sim(last_dict, joint_mins, joint_maxs, dev)
                 actions[:] = mapped
+
+            # throttled debug (~ once/sec): proves whether packets arrive AND values move
+            step_i += 1
+            if step_i % 60 == 0:
+                if last_dict is None:
+                    print(f"[BRIDGE] rx: NONE (no packets yet)  connected={action_server.connected}", flush=True)
+                else:
+                    print(f"[BRIDGE] rx pan={last_dict['shoulder_pan.pos']:.1f} "
+                          f"grip={last_dict['gripper.pos']:.1f}  connected={action_server.connected}", flush=True)
 
             obs, _, _, _, _ = env.step(actions)
 
