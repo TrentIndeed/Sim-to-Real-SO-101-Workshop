@@ -358,6 +358,14 @@ class BottleToBasketEnvCfg(SO101TaskEnvCfg):
     events: BottleToBasketEventCfg = BottleToBasketEventCfg()
     observations: BottleToBasketObservationsCfg = BottleToBasketObservationsCfg()
 
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        # Use the convex-decomposition robot USD (gripper/jaw were SDF -> ~1 FPS on contact).
+        # Created by scripts/convexify_gripper.py; falls back to the original if not generated.
+        cvx = f"{assets_path}/usd/SO-ARM101-USD-cvx.usd"
+        if os.path.exists(cvx):
+            self.scene.robot.spawn.usd_path = cvx
+
 
 @configclass
 class BottleToBasketDREnvCfg(BottleToBasketEnvCfg):
